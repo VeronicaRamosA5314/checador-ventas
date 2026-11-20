@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Checador Moderna</title>
+<style>
+:root{--tinta:#1b2430;--fondo:#f6f4ef;--verde:#1f7a4d;--ambar:#b86e00;--rojo:#b3261e;--gris:#6b7280}
+*{box-sizing:border-box}
+body{margin:0;padding:20px;min-height:100vh;background:var(--fondo);color:var(--tinta);font:18px/1.4 system-ui,-apple-system,Segoe UI,sans-serif}
+main{max-width:420px;margin:0 auto}
+h1{font-size:24px;margin:8px 0 20px}
+label{display:block;font-weight:600;margin-top:14px}
+input{width:100%;padding:14px;font-size:20px;border:2px solid var(--tinta);border-radius:8px;background:#fff}
+button{width:100%;padding:18px;margin-top:12px;font-size:20px;font-weight:700;color:#fff;background:var(--tinta);border:0;border-radius:10px}
+button:focus-visible,input:focus-visible{outline:3px solid #2563eb;outline-offset:2px}
+button:disabled{opacity:.3}
+.t-Entrada{background:var(--verde)}.t-InicioComida,.t-FinComida{background:var(--ambar)}.t-Salida{background:var(--rojo)}
+.link{background:none;color:var(--gris);font-size:16px;font-weight:500;text-decoration:underline}
+#m{min-height:2.8em;margin:16px 0 0;font-weight:600}.ok{color:var(--verde)}.err{color:var(--rojo)}
+#pend{color:var(--ambar);font-size:16px}
+[hidden]{display:none}
+</style></head><body><main>
+<h1>Registro de jornada</h1>
+<section id="login">
+  <label for="id">Número de empleado</label><input id="id" inputmode="numeric" autocomplete="off">
+  <label for="pin">PIN</label><input id="pin" type="password" inputmode="numeric" autocomplete="off">
+  <button onclick="entrar()">Entrar</button>
+</section>
+<section id="app" hidden>
+  <p>Hola, <strong id="hola"></strong></p>
+  <button class="t-Entrada" data-t="Entrada" onclick="marcar('Entrada')">Registrar entrada</button>
+  <button class="t-InicioComida" data-t="InicioComida" onclick="marcar('InicioComida')">Registrar inicio de comida</button>
+  <button class="t-FinComida" data-t="FinComida" onclick="marcar('FinComida')">Registrar fin de comida</button>
+  <button class="t-Salida" data-t="Salida" onclick="marcar('Salida')">Registrar salida</button>
+  <button class="link" onclick="salir()">Cerrar sesión</button>
+</section>
+<p id="m" role="status"></p><p id="pend"></p>
+</main>
+<script>
+const API='https://script.google.com/macros/s/AKfycbznDd620kl5OBIfvsnUp7xn-DMKhUoD01OEytPVb-Lf323WXgxdyC2WGTRMWmcbVeAv/exec';
+const $=i=>document.getElementById(i);
+const dev=localStorage.dev||(localStorage.dev=crypto.randomUUID());
+const SIG={Entrada:['InicioComida','Salida'],InicioComida:['FinComida'],FinComida:['Salida'],Salida:[]};
+let u=null,gps='opcional';
+const cola=()=>JSON.parse(localStorage.cola||'[]');
+const msg=(t,ok)=>{$('m').textContent=t;$('m').className=ok?'ok':'err'};
+const api=async b=>(await fetch(API,{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify(b)})).json();
+
+function pendientes(){const n=cola().length;$('pend').textContent=n?`Registros pendientes de enviar: ${n}`:''}
+function mostrar(p){
+  $('login').hidden=true;$('app').hidden=false;$('hola').textContent=u.nombre;
+  document.querySelectorAll('[data-t]').forEach(b=>b.disabled=!p.includes(b.dataset.t));
+}
+function salir(){u=null;$('pin').value='';$('app').hidden=true;$('login').hidden=false;msg('')}
+
+async function entrar(){
+  const id=$('id').value.trim(),pin=$('pin').value;
+  if(!id||!pin)return msg('Escribe tu número de empleado y tu PIN.');
+  try{
+    const r=await api({accion:'estado',id,pin,dev});
+    if(!r.ok)return msg(r.msg);
+    u={id,pin,nombre:r.nombre};mostrar(r.permitidos);msg('');
+  }catch(e){
+    u={id,pin,nombre:id};mostrar(['Entrada','InicioComida','FinComida','Salida']);
+    msg('Sin conexión. Se guardará como registro diferido.');
+  }
+}
+
+async function marcar(tipo){
+  msg('Registrando…',1);let pos={};
+  if(gps!='off'){
+    try{const p=await new Promise((a,b)=>navigator.geolocation.getCurrentPosition(a,b,{enableHighAccuracy:true,timeout:12000}));
+      pos={lat:p.coords.latitude,lng:p.coords.longitude,acc:Math.round(p.coords.accuracy)};
+    }catch(e){if(gps=='obligatorio')return msg('Activa la ubicación (GPS) del celular para registrar.')}
+  }
+  const b={accion:'registrar',id:u.id,pin:u.pin,dev,tipo,...pos};
+  try{
+    const r=await api(b);
+    if(!r.ok)return msg(r.msg);
+    msg(`${tipo} registrada a las ${r.hora}`,1);mostrar(r.permitidos);sync();
+  }catch(e){
+    const c=cola();c.push({...b,dif:1,ts:new Date().toISOString()});localStorage.cola=JSON.stringify(c);
+    msg(`Sin señal: ${tipo} guardada como registro diferido. Se enviará al reconectar.`,1);
+    mostrar(SIG[tipo]);pendientes();
+  }
+}
+
+async function sync(){
+  let c=cola();
+  while(c.length){
+    try{const r=await api(c[0]);if(!r.ok){msg('Un registro pendiente fue rechazado: '+r.msg);break}
+      c.shift();localStorage.cola=JSON.stringify(c);
+    }catch(e){break}
+  }
+  pendientes();
+}
+
+fetch(API).then(r=>r.json()).then(c=>gps=c.gps||gps).catch(()=>{});
+addEventListener('online',sync);sync();
+</script></body></html>
