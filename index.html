@@ -72,7 +72,7 @@ async function marcar(tipo){
       pos={lat:p.coords.latitude,lng:p.coords.longitude,acc:Math.round(p.coords.accuracy)};
     }catch(e){if(gps=='obligatorio')return msg('Activa la ubicación (GPS) del celular para registrar.')}
   }
-  const b={accion:'registrar',id:u.id,pin:u.pin,dev,tipo,...pos};
+  const b={accion:'registrar',id:u.id,pin:u.pin,dev,tipo,uid:crypto.randomUUID(),...pos};
   try{
     const r=await api(b);
     if(!r.ok)return msg(r.msg);
