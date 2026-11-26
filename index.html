@@ -58,7 +58,8 @@ async function entrar(){
   try{
     const r=await api({accion:'estado',id,pin,dev});
     if(!r.ok)return msg(r.msg);
-    u={id,pin,nombre:r.nombre};mostrar(r.permitidos);msg('');
+    u={id,pin,nombre:r.nombre};mostrar(r.permitidos);
+    msg(r.pendientes&&r.pendientes.length?'⚠️ Sin registro de salida el día: '+r.pendientes.join(', ')+'. Avisa a RH.':'');
   }catch(e){
     u={id,pin,nombre:id};mostrar(['Entrada','InicioComida','FinComida','Salida']);
     msg('Sin conexión. Se guardará como registro diferido.');
